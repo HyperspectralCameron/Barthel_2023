@@ -1,0 +1,456 @@
+---
+title: ""
+output: html_document
+---
+
+#Load data 
+All file directories are relative to the rmd. file and so should work automatically.
+```{r}
+##############################################
+# Script: Analysis of Data from Field Campaign (18.05.2021)
+# - Data collected using a SCV Spectroradiometer and a clipping extension
+# Location: Frgasburg, South Tyrol (Italy)
+# Scan time: 5 seconds
+# Date: 07.10.2021
+# Author: Dana Barthel
+# Eurac Research
+##############################################
+
+#tidy up the global environment
+rm(list=ls(all=T))
+
+# Install packages of necesssary
+# install.packages(list("reshape", 
+#                       "prospectr",
+#                       "stringr",
+#                       "multcomp",
+#                       "caret",
+#                       "tidyverse")
+# )
+
+# Loading of Packages
+library(reshape)
+library(prospectr)
+library(stringr)
+library(multcomp)
+library(caret)
+library(tidyverse)
+
+#Load data
+load("./Spectroradiometer.RData")
+load("./important_wavelength.RData")
+
+#remove outlier
+which(list_df2$tree=="3_103") #9
+which(list_df2$tree=="3_71")  #17
+ol<-c(9,17)
+
+list_df2<-list(tree=list_df2$tree[-ol], Infection=list_df2$Infection[-ol],
+Latent=list_df2$Latent[-ol],
+bands=list_df2$bands[-ol],   
+value=list_df2$value[-ol,],
+group=list_df2$group[-ol])
+```
+
+#transformation (log(1/R)+first derivativ)
+```{r}
+abs_1<-log(1/list_df1$value)
+abs_2<-log(1/list_df2$value)
+abs_3<-log(1/list_df3$value)
+abs_4<-log(1/list_df4$value)
+abs_5<-log(1/list_df5$value)
+abs_6<-log(1/list_df6$value)
+abs_7<-log(1/list_df7$value)
+
+trans_df1<-savitzkyGolay(abs_1, m=1, p=2, w=9)
+trans_df2<-savitzkyGolay(abs_2, m=1, p=2, w=9)
+trans_df3<-savitzkyGolay(abs_3, m=1, p=2, w=9)
+trans_df4<-savitzkyGolay(abs_4, m=1, p=2, w=9)
+trans_df5<-savitzkyGolay(abs_5, m=1, p=2, w=9)
+trans_df6<-savitzkyGolay(abs_6, m=1, p=2, w=9)
+trans_df7<-savitzkyGolay(abs_7, m=1, p=2, w=9)
+
+bands=list_df2$bands[5:992] #derivative
+bands=bands[88:922] #reduce noise
+
+trans_df1<-trans_df1[,88:922]
+trans_df2<-trans_df2[,88:922]
+trans_df3<-trans_df3[,88:922]
+trans_df4<-trans_df4[,88:922]
+trans_df5<-trans_df5[,88:922]
+trans_df6<-trans_df6[,88:922]
+trans_df7<-trans_df7[,88:922]
+
+datasets.by.month <- list(
+  "April" = c(list_df1[-7], list("value" = as.data.frame(trans_df1))),
+  "May" = c(list_df2[-5], list("value" = as.data.frame(trans_df2))),
+  "June" = c(list_df3[-7], list("value" = as.data.frame(trans_df3))),
+  "July" = c(list_df4[-8], list("value" = as.data.frame(trans_df4))),
+  "August" = c(list_df5[-8], list("value" = as.data.frame(trans_df5))),
+  "October" = c(list_df6[-8], list("value" = as.data.frame(trans_df6))),
+  "November" = c(list_df7[-7], list("value" = as.data.frame(trans_df7)))
+)
+```
+
+#Figure 3: PCA score plots
+```{r}
+colfunc <- colorRampPalette(c("red","blue"))
+color<-colfunc(4)
+#color<-c("#FF0000","#AA0055","#0000FF","green")
+#col2rgb("#AA0055")
+
+#alpha=150
+
+#color<-c(rgb(255, 0, 0, max = 255, alpha = alpha), rgb(170, 0, 85, max = 255, alpha = alpha),rgb(85, 0, 170, max = 255, alpha = alpha),rgb(0, 0, 255, max = 255, alpha = alpha))
+
+# png("all_pca_article.png", width = 15, height = 24/6*3, units = "cm", res = 600, pointsize=9)
+
+par(mfrow=c(4,3), mar=c(4,5,3,1), oma=c(0,0,0,0))#unten, links, oben, rechts
+
+#PCA
+pca1<-prcomp(trans_df1, scale=F)
+pca2<-prcomp(trans_df2, scale=F)
+pca3<-prcomp(trans_df3, scale=F)
+pca4<-prcomp(trans_df4, scale=F)
+pca5<-prcomp(trans_df5, scale=F)
+pca6<-prcomp(trans_df6, scale=F)
+pca7<-prcomp(trans_df7, scale=F)
+
+a1<-summary(pca1)
+a1<-as.data.frame(a1$importance)
+a2<-summary(pca2)
+a2<-as.data.frame(a2$importance)
+a3<-summary(pca3)
+a3<-as.data.frame(a3$importance)
+a4<-summary(pca4)
+a4<-as.data.frame(a4$importance)
+a5<-summary(pca5)
+a5<-as.data.frame(a5$importance)
+a6<-summary(pca6)
+a6<-as.data.frame(a6$importance)
+a7<-summary(pca7)
+a7<-as.data.frame(a7$importance)
+
+#1 campaign
+PC1<-round(unlist(a1[2,1])*100, digits=2)
+PC2<-round(unlist(a1[2,2])*100, digits=2)
+
+plot(pca1$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df1$Infection))], col=color[as.integer(as.factor(list_df1$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("A) April")), side=3, line=0.7, at=par('usr')[1], cex=1.2, xpd=T, adj=0)
+
+#2 campaign
+PC1<-round(unlist(a2[2,1])*100, digits=2)
+PC2<-round(unlist(a2[2,2])*100, digits=2)
+
+plot(pca2$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df2$Infection))], col=color[as.integer(as.factor(list_df2$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("B) May")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+
+#3 campaign
+PC1<-round(unlist(a3[2,1])*100, digits=2)
+PC2<-round(unlist(a3[2,2])*100, digits=2)
+
+plot(pca3$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df3$Infection))], col=color[as.integer(as.factor(list_df3$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("C) June")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+
+
+#4 campaign
+PC1<-round(unlist(a4[2,1])*100, digits=2)
+PC2<-round(unlist(a4[2,2])*100, digits=2)
+
+plot(pca4$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df4$Infection))], col=color[as.integer(as.factor(list_df4$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("D) July")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+
+#5 campaign
+PC1<-round(unlist(a5[2,1])*100, digits=2)
+PC2<-round(unlist(a5[2,2])*100, digits=2)
+
+plot(pca5$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df5$Infection))], col=color[as.integer(as.factor(list_df5$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("E) August")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+
+#6 campaign
+PC1<-round(unlist(a6[2,1])*100, digits=2)
+PC2<-round(unlist(a6[2,2])*100, digits=2)
+
+{plot(pca6$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df6$Infection))], col=color[as.integer(as.factor(list_df6$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("F) October")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+}
+
+#7 campaign
+PC1<-round(unlist(a7[2,1])*100, digits=2)
+PC2<-round(unlist(a7[2,2])*100, digits=2)
+
+plot(pca7$x[,1:2], main="", pch=c(1,17)[as.integer(as.factor(list_df7$Infection))], col=color[as.integer(as.factor(list_df7$group))], xlab=paste("PC1",PC1,"%"), ylab=paste("PC2",PC2,"%"))
+mtext(text=expression(bold("G) November")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+legend("right", pch=c(17,17,17,1), inset=c(-1,0), cex=1, y.intersp=.95, c("APP infected (A)","APP infected (B)","APP infected (C)","Non-infected"), col=color, bty="n", xpd=NA)
+
+# dev.off()
+```
+
+#PLS-DA
+```{r}
+library(caret)
+library(dplyr)
+train.models <- function(dataset) {
+trcontrol <- trainControl(method = "LOOCV",
+             verboseIter = T)
+
+model <- train(x= dataset$value, 
+               y = dataset$Infection,
+               method = "pls",
+               trControl = trcontrol,
+               #preProcess = "scale",
+               tuneLength = length(datasets.by.month$April$tree)-2)
+}
+
+trained.models <- lapply(datasets.by.month, train.models)
+```
+
+#summarise results
+```{r}
+get_elements <- function(x, element) {
+  if(is.list(x))
+  {
+    if(element %in% names(x)) x[[element]]
+    else lapply(x, get_elements, element = element)
+  }
+}
+
+results <- get_elements(trained.models, "results") %>%  bind_rows(.id = "id") %>% group_by(id) %>%  slice_max(Accuracy) %>% slice_min(ncomp)
+
+results$id <- factor(results$id, levels = c("April", "May", "June", "July", "August", "October", "November"),
+                     ordered = T)
+results <- results %>% arrange(id) %>% dplyr::rename(Month = id) %>% dplyr::rename(`Latent Variables` = ncomp)
+
+results
+Importance <- lapply(trained.models, varImp, scale = F)
+```
+
+#Figure 4: Correlation and difference curves with VIP
+```{r}
+# Correlation and difference curves 
+#Threshold for R2 
+  Importance <- lapply(trained.models, varImp, scale = F)
+  th<-0.7
+
+par( mfrow=c(3,2), mar=c(4,6,3,0.5), oma=c(0,0,0,0))#unten, links, oben, rechts
+
+#April
+important_Apr <- filter(Importance$April$importance, Overall > 1) 
+important_Apr <- important_Apr %>% mutate(Wavelength = gsub(pattern = "X", replacement = "", x=  rownames(important_Apr)))
+
+plot(y=colMeans(trans_df7[which(list_df1$Infection=="yes"),])-colMeans(trans_df7[which(list_df1$Infection=="no"),]), x=bands, ylim=c(-.015,.007), type="l", col="white",xlab="Wavelength [nm]", ylab="First derivaive absorbance", main="")
+abline(v=important_Apr$Wavelength, lty=1, col="orange") 
+abline(h=0, col="blue", lwd=0.6)
+lines(y=colMeans(trans_df1[which(list_df1$Infection=="yes"),])-colMeans(trans_df1[which(list_df1$Infection=="no"),]), x=bands, lty=1, col="red")
+#legendnd("bottomright", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected","Relevant wavelength"), col=c("blue","red","grey75"), lty=c(1,1), bty="n", xpd=NA)
+box()
+mtext(text=expression(bold("Difference curves")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+mtext(text=expression(bold("April")), side=2, line=4, at= c(-0.01),cex=1, xpd=T, adj=0, outer = F)
+
+  #correlation coefficient 
+cor<-as.vector(cor(as.integer(as.factor(list_df1$Infection)), trans_df1))
+
+plot(y=cor, x=bands, ylim=c(-1,1), pch=20, type = "p", xlab="Wavelength [nm]", ylab="Correlation coefficient", main="", las=1, yaxt="n", col="white", cex=0.4)
+axis(side = 2, at = c(-1, -0.75,-0.50,-0.25,0,0.25,0.50,0.75,1), labels = c("-1", "-0.75","-0.50","-0.25","0","0.25","0.50","0.75","1"), cex.axis=1, las=1, mgp=c(0, 0.5, 0),tck=-0.02)
+abline(v=important_Apr$Wavelength, lty=1, col="orange")
+abline(h=c(-th,th), lwd=0.6)
+abline(h=c(0), lty=3, lwd=0.6)
+lines(y=cor, x=bands, lty=1, col="red")
+box()
+mtext(text=expression(bold("Correlation analysis")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+#legendnd("bottomright", cex=0.7, y.intersp=.85, c("Relevant wavelength"), col=c("grey75"), lty=c(1), bty="n", xpd=NA)
+
+#October
+important_Oct <- filter(Importance$October$importance, Overall > 1) 
+important_Oct <- important_Oct %>% mutate(Wavelength = gsub(pattern = "X", replacement = "", x=  rownames(important_Oct)))
+
+plot(y=colMeans(trans_df7[which(list_df7$Infection=="yes"),])-colMeans(trans_df7[which(list_df7$Infection=="no"),]), x=bands, ylim=c(-.006,.006), type="l", col="white",xlab="Wavelength [nm]", ylab="First derivaive absorbance", main="")
+abline(v=important_Oct$Wavelength, lty=1, col="orange")
+abline(h=0, col="blue", lwd=0.6)
+lines(y=colMeans(trans_df6[which(list_df6$Infection=="yes"),])-colMeans(trans_df6[which(list_df6$Infection=="no"),]), x=bands, col="red")
+#legendnd("bottomright", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected","Relevant wavelength"), col=c("blue","red","grey75"), lty=c(1,1), bty="n", xpd=NA)
+box()
+mtext(text=expression(bold("October")), side=2, line=4, at= c(-0.004), cex=1, xpd=T, adj=0, outer = F)
+
+#correlation coefficient 
+cor<-as.vector(cor(as.integer(as.factor(list_df6$Infection)), trans_df6))
+
+plot(y=cor, x=bands, ylim=c(-1,1), pch=20, type = "p", xlab="Wavelength [nm]", ylab="Correlation coefficient", main="", las=1, yaxt="n", col="white", cex=0.4)
+axis(side = 2, at = c(-1, -0.75,-0.50,-0.25,0,0.25,0.50,0.75,1), labels = c("-1", "-0.75","-0.50","-0.25","0","0.25","0.50","0.75","1"), cex.axis=1, las=1, mgp=c(0, 0.5, 0),tck=-0.02)
+abline(v=important_Oct$Wavelength, lty=1, col="orange")
+abline(h=c(-th,th), lwd=0.6)
+abline(h=c(0), lty=3, lwd=0.6)
+lines(y=cor, x=bands, col="red")
+box()
+#mtext(text=expression(bold("E) October")), side=3, line=0.7, at=par('usr')[1], cex=1, xpd=T, adj=0)
+#legendnd("bottomright", cex=0.7, y.intersp=.85, c("Relevant wavelength"), col=c("grey75"), lty=c(1), bty="n", xpd=NA)
+
+#November
+important_Nov <- filter(Importance$November$importance, Overall > 1) 
+important_Nov <- important_Nov %>% mutate(Wavelength = gsub(pattern = "X", replacement = "", x=  rownames(important_Nov)))
+
+plot(y=colMeans(trans_df7[which(list_df7$Infection=="yes"),])-colMeans(trans_df7[which(list_df7$Infection=="no"),]), x=bands, ylim=c(-.021,.032), type="l", col="white",xlab="Wavelength [nm]", ylab="First derivaive absorbance", main="")
+abline(v=important_Nov$Wavelength, lty=1, col="orange")
+abline(h=0, col="blue", lwd=0.6)
+lines(y=colMeans(trans_df7[which(list_df7$Infection=="yes"),])-colMeans(trans_df7[which(list_df7$Infection=="no"),]), x=bands, lty=1, col="red")
+#legendnd("bottomright", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected","Relevant wavelength"), col=c("blue","red","grey75"), lty=c(1,1), bty="n", xpd=NA)
+box()
+mtext(text=expression(bold("November")), side=2, line=4, at= c(-0.02), cex=1, xpd=T, adj=0, outer = F)
+
+  #correlation coefficient 
+cor<-as.vector(cor(as.integer(as.factor(list_df7$Infection)), trans_df7))
+
+plot(y=cor, x=bands, ylim=c(-1,1), pch=20, type = "p", xlab="Wavelength [nm]", ylab="Correlation coefficient", main="", las=1, yaxt="n", col="white", cex=0.4)
+axis(side = 2, at = c(-1, -0.75,-0.50,-0.25,0,0.25,0.50,0.75,1), labels = c("-1", "-0.75","-0.50","-0.25","0","0.25","0.50","0.75","1"), cex.axis=1, las=1, mgp=c(0, 0.5, 0),tck=-0.02)
+abline(v=important_Nov$Wavelength, lty=1, col="orange")
+abline(h=c(-th,th), lwd=0.6)
+abline(h=c(0), lty=3, lwd=0.6)
+lines(y=cor, x=bands, lty=1, col="red")
+box()
+
+
+# dev.off()
+
+```
+#Choose representative wavelengths and plot boxplots as a function of symptom class
+
+```{r}
+importance <- list("April" =  important_Apr, "October" = important_Oct,  "November" = important_Nov)
+
+#calculate representative wavelengths as  the wavelength from VIP > 1 with highest R2
+library(data.table)
+correlations <- 
+lapply(c("April" = "April", "October" = "October", "November"= "November"), 
+       function(month) {
+y <- as.integer(as.factor(datasets.by.month[[c(month,"Infection")]]))-1
+datasets.by.month[[c(month,"value")]][rownames(importance[[month]])]%>% 
+  lapply(cor, y) %>% unlist() %>% as.data.frame()
+}) 
+
+Rep.Wavelengths <- list(
+  "April" = 691.5,
+  "October" = c(500.4, 682.2, 1878.1),
+  "November" = 507.5
+)
+```
+#Figure 5: Boxplots at representative wavelengths
+```{r}
+#October
+#packages
+  
+  library(car)
+  library(multcomp)
+  library(ggpubr)
+
+#Colour scale
+colfunc <- colorRampPalette(c("red","blue"))
+color<-colfunc(4)
+
+#Function for boxplots
+  box.plot.function <- function(wl, month) {
+    #extract necessary data
+    names(wl) <- paste(wl, "nm")
+    month = month
+    variable <- paste0("X", wl)
+    boxplot.data <- datasets.by.month[[c(month, "value", variable)]] %>% 
+      cbind(datasets.by.month[[c(month, "group")]]) %>% 
+      `colnames<-`(c("Measurement", "Group")) %>% 
+      as.data.frame()
+    boxplot.data$Group <- as.factor(boxplot.data$Group)
+    boxplot.data$Measurement <- as.numeric(boxplot.data$Measurement)
+    
+    #useful to have means and sd's per group
+    means <- 
+    boxplot.data %>% group_by(Group) %>% 
+    summarise_at(vars(Measurement), c("mean" = mean, "sd"= sd,
+                                   "UQ" = ~quantile(., .75)))
+
+#Anova and Tukey for significance groups    
+anova <- lm(Measurement ~ Group, data = boxplot.data)
+summary(anova)
+
+Tukey.HSD<-glht(anova, linfct=mcp(Group="Tukey"))
+summary(anova)
+summary(Tukey.HSD)
+test <- cld(Tukey.HSD)
+groups <- test$mcletters$Letters
+groups <- cbind(means, groups) %>% data.frame()
+
+#Actual plotting
+plots <- 
+  ggplot(boxplot.data, aes(x = Group, y = Measurement))+
+  geom_boxplot(aes(fill = Group))+
+  scale_fill_manual(values = color)+
+  scale_x_discrete(breaks = NULL)+
+  scale_y_continuous(n.breaks = 4)+
+  xlab("")+
+  ylab(element_blank())+
+  theme_classic()+
+  theme(panel.border = element_rect(colour = "black", fill=NA, size=1),
+        axis.text.y = element_text(angle = 90, size = 7, hjust = 0.5)
+  )+
+  geom_text(data = groups, aes(label = groups, x = Group, y = UQ + 0*sd,
+                               hjust = -.6, vjust = -.4))+
+  stat_compare_means(method = "anova", 
+                     label.x.npc = 0.1, label.y.npc = "bottom")+
+  expand_limits(y = max(boxplot.data$Measurement) + abs(max(boxplot.data$Measurement)*0.1))
+  }
+
+#Plot for each month 
+April.box.plots <- 
+  lapply(Rep.Wavelengths$April, box.plot.function, month = "April")
+October.box.plots <- 
+  lapply(Rep.Wavelengths$October, box.plot.function, month = "October")
+November.box.plots <- 
+  lapply(Rep.Wavelengths$Nov, box.plot.function, month = "November")
+legend <- get_legend(October.box.plots[[1]]) %>% as_ggplot()
+legend <- list("legend" = legend) 
+plist <- c(April.box.plots,October.box.plots,November.box.plots, legend)
+require(grid)
+
+#Assemble and fine tune
+label.x <- 0.2
+label.y <- 1.1
+April.plot <- ggarrange(plotlist = c(April.box.plots), legend = "none", common.legend = T, labels = c(paste(Rep.Wavelengths$April, "nm")), label.x = label.x, label.y = label.y, ncol = 3)
+April.plot <- annotate_figure(April.plot, left = textGrob("April", rot = 90, vjust = 1, gp = gpar(cex = 1.3)))
+
+November.plot <- ggarrange(plotlist = November.box.plots, legend = "none", common.legend = T, labels = c(paste(Rep.Wavelengths$November, "nm")), label.x = label.x, label.y = label.y, ncol = 3)
+November.plot <- annotate_figure(November.plot, left = textGrob("November", rot = 90, vjust = 1, gp = gpar(cex = 1.3)))
+
+
+October.plot <- ggarrange(plotlist = October.box.plots, legend = "none", common.legend = T, labels = c("500.4 nm", "682.2 nm", "1878.1 nm"), label.x = label.x, label.y = label.y, ncol = 3)
+  theme(plot.margin = margin(1,0.1,0.1,0.1, "cm")) 
+October.plot <- annotate_figure(October.plot, left = textGrob("October", rot = 90, vjust = 1, gp = gpar(cex = 1.3)))
+
+plist <- list(April.plot, October.plot, November.plot)
+plot <- ggarrange(plotlist = plist, legend = "right", common.legend = T, ncol = 1, nrow = 3, legend.grob = get_legend(April.box.plots$`513.2 nm`)) +
+  theme(plot.margin = margin(1,0.1,0.1,0.1, "cm")) 
+annotate_figure(plot, left = textGrob("First Derivative log(1/Reflectance)", rot = 90, vjust = 1, gp = gpar(cex = 1.3)))
+```
+
+#Figure A1
+```{r}
+df<-as.data.frame(rbind(list_df1$value,list_df2$value,list_df3$value,list_df4$value,list_df5$value,list_df6$value,list_df7$value))
+df.abs<-as.data.frame(rbind(abs_1,abs_2,abs_3,abs_4,abs_5,abs_6,abs_7))
+df.trans<-as.data.frame(rbind(trans_df1,trans_df2,trans_df3,trans_df4,trans_df5,trans_df6,trans_df7))
+infection<-unlist(c(list_df1$Infection,list_df2$Infection,list_df3$Infection,list_df4$Infection,list_df5$Infection,list_df6$Infection,list_df7$Infection))
+
+# png("all_transformations_article.png", width = 15, height = 24/6*1, units = "cm", res = 600, pointsize=9)
+# 
+# par( mfrow=c(1,3), mar=c(4,4,3.5,1), oma=c(0,0,0,0))#unten, links, oben, rechts
+
+matplot(x=list_df6$bands, y=t(df), type="l", xlab="Wavelength [nm]", ylab="Reflectance", main="", col=c("blue","red")[as.integer(as.factor(infection))], lty=1, lwd=0.6, las=1)
+legend("topright", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected"), col=c("blue","red"), lty=c(1,1), bty="n", xpd=NA)
+mtext(text=expression(bold("A)")), side=3, line=0.7, at=par('usr')[1], cex=1.2, xpd=T, adj=1)
+
+matplot(x=list_df6$bands, y=t(df.abs), type="l", xlab="Wavelength [nm]", ylab="Absorbance", main="", col=c("blue","red")[as.integer(as.factor(infection))], lty=1, lwd=0.6, las=1)
+legend("topright", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected"), col=c("blue","red"), lty=c(1,1), bty="n", xpd=NA)
+mtext(text=expression(bold("B)")), side=3, line=0.7, at=par('usr')[1], cex=1.2, xpd=T, adj=1)
+
+matplot(x=bands, y=t(df.trans), type="l", xlab="Wavelength [nm]", ylab="First derivative absorbance", main="", col=c("blue","red")[as.integer(as.factor(infection))], lty=1, lwd=0.6, las=1)
+legend("topleft", cex=0.7, y.intersp=.85, c("Non-infected", "APP infected"), col=c("blue","red"), lty=c(1,1), bty="n", xpd=NA)
+mtext(text=expression(bold("C)")), side=3, line=0.7, at=par('usr')[1], cex=1.2, xpd=T, adj=1)
+# 
+# dev.off()
+```
+
